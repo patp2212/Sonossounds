@@ -23,7 +23,8 @@ let store = {};
 try { store = JSON.parse(await fs.readFile(DATA, 'utf8')); } catch {}
 const save = () => fs.writeFile(DATA, JSON.stringify(store, null, 2));
 const entry = (key) => (store[key] ??= { presets: DEFAULT_PRESETS(), active: null });
-const groupKey = (g) => g.members.map((m) => m.name).sort().join(' + ');
+// Schlüssel = Menge der Lautsprecher-IDs: stabil bei Umbenennung, unabhängig von Reihenfolge/Koordinator
+const groupKey = (g) => g.members.map((m) => m.id).sort().join('|');
 
 async function topology() {
   if (useMock) return mock.topology();

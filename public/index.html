@@ -38,14 +38,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 </head>
 <body>
 <main>
-  <header><h1>Sonossounds</h1><span><span id="demo" class="badge" hidden>Demo</span> <button class="icon" id="refresh" aria-label="Aktualisieren">↻</button></span></header>
+  <header><h1>Sonossounds</h1><span><span id="demo" class="badge" hidden>Demo</span> <button class="chip" id="solo" aria-pressed="false">Einzelne Räume</button> <button class="icon" id="refresh" aria-label="Aktualisieren">↻</button></span></header>
   <div id="groups"><p class="msg">Suche Lautsprecher …</p></div>
 </main>
 <div id="toast" role="alert"></div>
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, props = {}, ...kids) => { const n = Object.assign(document.createElement(t), props); n.append(...kids); return n; };
-let busy = false;
+let busy = false, lastData = null;
+let showSolo = false; try { showSolo = localStorage.solo === '1'; } catch {}
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
@@ -60,9 +61,12 @@ const SLIDERS = [['volume', 'Lautstärke', 0, 100], ['bass', 'Bass', -10, 10], [
 
 function render(data) {
   $('#demo').hidden = !data.mock;
+  lastData = data;
+  $('#solo').classList.toggle('on', showSolo);
   const root = $('#groups'); root.replaceChildren();
-  if (!data.groups.length) root.append(el('p', { className: 'msg' }, 'Keine Gruppen gefunden.'));
-  for (const g of data.groups) root.append(card(g));
+  const list = data.groups.filter((g) => g.grouped || showSolo);
+  if (!list.length) root.append(el('p', { className: 'msg' }, 'Keine Gruppen aktiv. Gruppiere Lautsprecher in der Sonos-App oder blende „Einzelne Räume“ ein.'));
+  for (const g of list) root.append(card(g));
 }
 
 function card(g) {
@@ -77,12 +81,12 @@ function card(g) {
   }
   const add = el('button', { className: 'chip add', textContent: '+ Speichern' });
   add.onclick = guard(async () => {
-    const name = prompt('Name des Presets für „' + g.name + '“:'); if (!name) return;
+    const name = prompt('Name des Presets für diese Gruppe:'); if (!name) return;
     await api('/api/preset/save', { key: g.key, name, ...cur }); await load();
   });
   chips.append(add);
 
-  const card = el('section', { className: 'card' }, el('h2', {}, g.name), el('p', { className: 'sub' }, g.grouped ? `Gruppe · ${g.members.length} Lautsprecher` : 'Einzelner Lautsprecher'), chips);
+  const card = el('section', { className: 'card' }, el('h2', {}, g.grouped ? g.members.join(' + ') : g.name), el('p', { className: 'sub' }, g.grouped ? `Gruppe · ${g.members.join(' · ')}` : 'Einzelner Lautsprecher'), chips);
   for (const [k, label, lo, hi] of SLIDERS) {
     const out = el('output', {}, String(cur[k]));
     const inp = el('input', { type: 'range', min: lo, max: hi, value: cur[k], ariaLabel: label });
@@ -109,6 +113,7 @@ const load = guard(async () => {
   finally { busy = false; }
 });
 $('#refresh').onclick = load;
+$('#solo').onclick = () => { showSolo = !showSolo; try { localStorage.solo = showSolo ? '1' : '0'; } catch {} render(lastData); };
 load();
 </script>
 </body>

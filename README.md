@@ -16,7 +16,7 @@ Auf dem Handy: „Zum Home-Bildschirm hinzufügen“ für App-Gefühl.
 - Spricht direkt lokal mit den Lautsprechern (UPnP/SOAP, Port 1400) – kein Cloud-Konto, keine Abhängigkeiten.
 - Gruppen werden live aus der Sonos-Topologie gelesen. Gruppenlautstärke über `GroupRenderingControl`,
   Bass/Höhen/Loudness werden auf jedes Mitglied gesetzt.
-- Presets werden pro Gruppe (Schlüssel = Mitgliedernamen) in `presets.json` gespeichert.
+- Presets gehören zur **Gruppe** (Schlüssel = Menge der Lautsprecher-IDs, also unabhängig von Raumnamen und Reihenfolge) in `presets.json` gespeichert. Aktive Gruppen stehen im Vordergrund, einzelne Räume lassen sich per Schalter einblenden.
   Standard: Normal, Bass+, Nacht, Party. Eigene über „+ Speichern“ aus den aktuellen Slider-Werten.
 - `npm test` prüft Topologie-Parser und API im Demo-Modus.
 

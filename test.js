@@ -15,7 +15,7 @@ const base = `http://localhost:${server.address().port}`;
 const api = (p, b) => fetch(base + p, b && { method: 'POST', body: JSON.stringify(b) }).then((r) => r.json());
 let { groups } = await api('/api/groups');
 assert.equal(groups.length, 3);
-const key = groups[0].key;
+const key = groups[0].key; assert.ok(groups[0].grouped);
 await api('/api/preset/apply', { key, presetId: 'bass' });
 ({ groups } = await api('/api/groups'));
 assert.equal(groups[0].current.bass, 6); assert.equal(groups[0].active, 'bass');
