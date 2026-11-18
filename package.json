@@ -1,0 +1,12 @@
+{
+  "name": "sonossounds",
+  "version": "1.0.0",
+  "description": "Gruppenbasierte Sonos-Steuerung mit Sound-Presets (Lautstärke, Bass, Höhen)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "demo": "SONOS_MOCK=1 node server.js",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=18" }
+}

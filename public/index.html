@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0b10">
+<title>Sonossounds</title>
+<style>
+:root{--bg:#0b0b10;--card:#14141c;--line:#242433;--text:#f2f2f7;--mute:#8b8ba0;--a:#7c5cff;--b:#22d3ee;--r:22px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:radial-gradient(900px 500px at 10% -10%,#1c1440 0,transparent 60%),var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:max(20px,env(safe-area-inset-top)) 16px 60px}
+main{max-width:640px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:center;margin:8px 4px 20px}
+h1{font-size:28px;margin:0;letter-spacing:-.03em}
+.badge{font-size:12px;color:var(--b);border:1px solid var(--b);padding:2px 10px;border-radius:99px}
+button{font:inherit;color:inherit;cursor:pointer}
+.icon{background:var(--card);border:1px solid var(--line);border-radius:99px;width:40px;height:40px}
+.card{background:linear-gradient(180deg,#171722,var(--card));border:1px solid var(--line);border-radius:var(--r);padding:20px;margin-bottom:16px}
+.card h2{margin:0;font-size:20px;letter-spacing:-.02em}
+.sub{color:var(--mute);font-size:13px;margin:2px 0 16px}
+.presets{display:flex;gap:8px;overflow-x:auto;padding:2px 0 14px;scrollbar-width:none}
+.chip{flex:none;padding:10px 16px;border-radius:99px;border:1px solid var(--line);background:#1b1b27;color:var(--mute);transition:.15s}
+.chip.on{background:linear-gradient(135deg,var(--a),var(--b));color:#fff;border-color:transparent;box-shadow:0 6px 24px #7c5cff55}
+.chip.add{border-style:dashed}
+.row{display:grid;grid-template-columns:70px 1fr 44px;align-items:center;gap:12px;margin:10px 0}
+.row label{color:var(--mute);font-size:14px}.row output{text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:9px;background:#2a2a3b;outline:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 10px #0008}
+input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:#fff}
+.sw{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--mute);font-size:14px}
+.sw button{width:50px;height:30px;border-radius:99px;border:0;background:#2a2a3b;position:relative;transition:.2s}
+.sw button::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}
+.sw button[aria-pressed=true]{background:var(--a)}.sw button[aria-pressed=true]::after{left:23px}
+.del{background:none;border:0;color:var(--mute);font-size:13px;margin-top:10px;padding:0}
+.msg{text-align:center;color:var(--mute);padding:40px 10px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#e5484d;padding:10px 18px;border-radius:99px;display:none;max-width:90vw;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Sonossounds</h1><span><span id="demo" class="badge" hidden>Demo</span> <button class="icon" id="refresh" aria-label="Aktualisieren">↻</button></span></header>
+  <div id="groups"><p class="msg">Suche Lautsprecher …</p></div>
+</main>
+<div id="toast" role="alert"></div>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const el = (t, props = {}, ...kids) => { const n = Object.assign(document.createElement(t), props); n.append(...kids); return n; };
+let busy = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'Fehler');
+  return j;
+}
+function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 4000); }
+const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+
+const SLIDERS = [['volume', 'Lautstärke', 0, 100], ['bass', 'Bass', -10, 10], ['treble', 'Höhen', -10, 10]];
+
+function render(data) {
+  $('#demo').hidden = !data.mock;
+  const root = $('#groups'); root.replaceChildren();
+  if (!data.groups.length) root.append(el('p', { className: 'msg' }, 'Keine Gruppen gefunden.'));
+  for (const g of data.groups) root.append(card(g));
+}
+
+function card(g) {
+  const cur = { ...g.current };
+  const send = (() => { let t; return () => { clearTimeout(t); t = setTimeout(guard(async () => { await api('/api/apply', { key: g.key, ...cur }); chips.querySelectorAll('.chip.on').forEach((c) => c.classList.remove('on')); }), 150); }; })();
+
+  const chips = el('div', { className: 'presets' });
+  for (const p of g.presets) {
+    const c = el('button', { className: 'chip' + (g.active === p.id ? ' on' : ''), textContent: p.name });
+    c.onclick = guard(async () => { await api('/api/preset/apply', { key: g.key, presetId: p.id }); await load(); });
+    chips.append(c);
+  }
+  const add = el('button', { className: 'chip add', textContent: '+ Speichern' });
+  add.onclick = guard(async () => {
+    const name = prompt('Name des Presets für „' + g.name + '“:'); if (!name) return;
+    await api('/api/preset/save', { key: g.key, name, ...cur }); await load();
+  });
+  chips.append(add);
+
+  const card = el('section', { className: 'card' }, el('h2', {}, g.name), el('p', { className: 'sub' }, g.grouped ? `Gruppe · ${g.members.length} Lautsprecher` : 'Einzelner Lautsprecher'), chips);
+  for (const [k, label, lo, hi] of SLIDERS) {
+    const out = el('output', {}, String(cur[k]));
+    const inp = el('input', { type: 'range', min: lo, max: hi, value: cur[k], ariaLabel: label });
+    inp.oninput = () => { cur[k] = +inp.value; out.textContent = inp.value; send(); };
+    card.append(el('div', { className: 'row' }, el('label', {}, label), inp, out));
+  }
+  const sw = el('button', { ariaPressed: String(cur.loudness), ariaLabel: 'Loudness' });
+  sw.onclick = () => { cur.loudness = !cur.loudness; sw.setAttribute('aria-pressed', cur.loudness); send(); };
+  card.append(el('div', { className: 'sw' }, 'Loudness', sw));
+
+  const active = g.presets.find((p) => p.id === g.active);
+  if (active) {
+    const d = el('button', { className: 'del', textContent: `Preset „${active.name}“ löschen` });
+    d.onclick = guard(async () => { if (confirm(`„${active.name}“ löschen?`)) { await api('/api/preset/delete', { key: g.key, presetId: active.id }); await load(); } });
+    card.append(d);
+  }
+  return card;
+}
+
+const load = guard(async () => {
+  if (busy) return; busy = true;
+  try { render(await api('/api/groups')); }
+  catch (e) { $('#groups').replaceChildren(el('p', { className: 'msg' }, e.message)); }
+  finally { busy = false; }
+});
+$('#refresh').onclick = load;
+load();
+</script>
+</body>
+</html>
