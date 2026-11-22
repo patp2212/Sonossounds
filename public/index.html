@@ -38,7 +38,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 </head>
 <body>
 <main>
-  <header><h1>Sonossounds</h1><span><span id="demo" class="badge" hidden>Demo</span> <button class="chip" id="solo" aria-pressed="false">Einzelne Räume</button> <button class="icon" id="refresh" aria-label="Aktualisieren">↻</button></span></header>
+  <header><h1>Sonossounds</h1><span><span id="demo" class="badge" hidden>Demo</span> <button class="icon" id="refresh" aria-label="Aktualisieren">↻</button></span></header>
   <div id="groups"><p class="msg">Suche Lautsprecher …</p></div>
 </main>
 <div id="toast" role="alert"></div>
@@ -46,7 +46,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, props = {}, ...kids) => { const n = Object.assign(document.createElement(t), props); n.append(...kids); return n; };
 let busy = false, lastData = null;
-let showSolo = false; try { showSolo = localStorage.solo === '1'; } catch {}
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
@@ -62,10 +61,9 @@ const SLIDERS = [['volume', 'Lautstärke', 0, 100], ['bass', 'Bass', -10, 10], [
 function render(data) {
   $('#demo').hidden = !data.mock;
   lastData = data;
-  $('#solo').classList.toggle('on', showSolo);
   const root = $('#groups'); root.replaceChildren();
-  const list = data.groups.filter((g) => g.grouped || showSolo);
-  if (!list.length) root.append(el('p', { className: 'msg' }, 'Keine Gruppen aktiv. Gruppiere Lautsprecher in der Sonos-App oder blende „Einzelne Räume“ ein.'));
+  const list = data.groups;
+  if (!list.length) root.append(el('p', { className: 'msg' }, 'Keine Lautsprecher gefunden.'));
   for (const g of list) root.append(card(g));
 }
 
@@ -113,7 +111,6 @@ const load = guard(async () => {
   finally { busy = false; }
 });
 $('#refresh').onclick = load;
-$('#solo').onclick = () => { showSolo = !showSolo; try { localStorage.solo = showSolo ? '1' : '0'; } catch {} render(lastData); };
 load();
 </script>
 </body>
