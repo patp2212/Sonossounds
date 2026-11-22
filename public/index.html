@@ -22,7 +22,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .chip{flex:none;padding:10px 16px;border-radius:99px;border:1px solid var(--line);background:#1b1b27;color:var(--mute);transition:.15s}
 .chip.on{background:linear-gradient(135deg,var(--a),var(--b));color:#fff;border-color:transparent;box-shadow:0 6px 24px #7c5cff55}
 .chip.add{border-style:dashed}
-.row{display:grid;grid-template-columns:70px 1fr 44px;align-items:center;gap:12px;margin:10px 0}
+.chip{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.row{display:grid;grid-template-columns:92px 1fr 44px;align-items:center;gap:12px;margin:10px 0}
 .row label{color:var(--mute);font-size:14px}.row output{text-align:right;font-variant-numeric:tabular-nums}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:9px;background:#2a2a3b;outline:0}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 10px #0008}
@@ -32,6 +33,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 .sw button::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}
 .sw button[aria-pressed=true]{background:var(--a)}.sw button[aria-pressed=true]::after{left:23px}
 .del{background:none;border:0;color:var(--mute);font-size:13px;margin-top:10px;padding:0}
+.auto{margin-top:14px;color:var(--mute);font-size:14px}
+.auto summary{cursor:pointer;padding:4px 0}
+.autorow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0}
+.autorow select{background:#1b1b27;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:8px 10px;font:inherit;max-width:60%}
 .msg{text-align:center;color:var(--mute);padding:40px 10px}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#e5484d;padding:10px 18px;border-radius:99px;display:none;max-width:90vw;font-size:14px}
 </style>
@@ -45,7 +50,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border:0;border-radiu
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, props = {}, ...kids) => { const n = Object.assign(document.createElement(t), props); n.append(...kids); return n; };
-let busy = false, lastData = null;
+let busy = false, lastSig = '', touching = false;
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
@@ -56,15 +61,16 @@ async function api(path, body) {
 function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 4000); }
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
 
+const AUTO = [['tv', 'TV'], ['radio', 'Radio'], ['spotify', 'Spotify'], ['linein', 'Line-in']];
+const srcLabel = (s) => (s ? ({ tv: 'TV', radio: 'Radio', spotify: 'Spotify', linein: 'Line-in', other: 'Wiedergabe' }[s.type] + (s.type === 'radio' && s.title ? ` · ${s.title}` : '')) : '');
 const SLIDERS = [['volume', 'Lautstärke', 0, 100], ['bass', 'Bass', -10, 10], ['treble', 'Höhen', -10, 10]];
 
 function render(data) {
+  lastSig = JSON.stringify(data);
   $('#demo').hidden = !data.mock;
-  lastData = data;
   const root = $('#groups'); root.replaceChildren();
-  const list = data.groups;
-  if (!list.length) root.append(el('p', { className: 'msg' }, 'Keine Lautsprecher gefunden.'));
-  for (const g of list) root.append(card(g));
+  if (!data.groups.length) root.append(el('p', { className: 'msg' }, 'Keine Lautsprecher gefunden.'));
+  for (const g of data.groups) root.append(card(g));
 }
 
 function card(g) {
@@ -74,18 +80,34 @@ function card(g) {
   const chips = el('div', { className: 'presets' });
   for (const p of g.presets) {
     const c = el('button', { className: 'chip' + (g.active === p.id ? ' on' : ''), textContent: p.name });
-    c.onclick = guard(async () => { await api('/api/preset/apply', { key: g.key, presetId: p.id }); await load(); });
+    // Kurzer Tipp = anwenden, langer Druck (0,6 s) = Preset mit den aktuellen Slider-Werten überschreiben
+    let timer = null, long = false;
+    const cancel = () => clearTimeout(timer);
+    c.onpointerdown = () => {
+      long = false; cancel();
+      timer = setTimeout(guard(async () => {
+        long = true; navigator.vibrate?.(30);
+        if (!confirm(`Preset „${p.name}“ mit den aktuellen Werten überschreiben?`)) return;
+        await api('/api/preset/update', { key: g.key, presetId: p.id, ...cur }); await load();
+      }), 600);
+    };
+    c.onpointerup = c.onpointerleave = c.onpointercancel = cancel;
+    c.oncontextmenu = (e) => e.preventDefault();
+    c.onclick = guard(async () => {
+      if (long) { long = false; return; }
+      await api('/api/preset/apply', { key: g.key, presetId: p.id }); await load();
+    });
     chips.append(c);
   }
   const add = el('button', { className: 'chip add', textContent: '+ Speichern' });
   add.onclick = guard(async () => {
-    const name = prompt('Name des Presets für diese Gruppe:'); if (!name) return;
+    const name = prompt('Name des Presets für „' + g.name + '“:'); if (!name) return;
     await api('/api/preset/save', { key: g.key, name, ...cur }); await load();
   });
   chips.append(add);
 
-  const card = el('section', { className: 'card' }, el('h2', {}, g.grouped ? g.members.join(' + ') : g.name), el('p', { className: 'sub' }, g.grouped ? `Gruppe · ${g.members.join(' · ')}` : 'Einzelner Lautsprecher'), chips);
-  for (const [k, label, lo, hi] of SLIDERS) {
+  const card = el('section', { className: 'card' }, el('h2', {}, g.name), el('p', { className: 'sub' }, [g.grouped ? `Gruppe · ${g.members.length} Lautsprecher` : 'Einzelner Lautsprecher', srcLabel(g.source)].filter(Boolean).join(' · ')), chips);
+  for (const [k, label, lo, hi] of [...SLIDERS, ...(cur.sub != null ? [['sub', 'Sub', -15, 15]] : []), ...(cur.rear != null ? [['rear', 'Rears TV', -15, 15], ['rearMusic', 'Rears Musik', -15, 15]] : [])]) {
     const out = el('output', {}, String(cur[k]));
     const inp = el('input', { type: 'range', min: lo, max: hi, value: cur[k], ariaLabel: label });
     inp.oninput = () => { cur[k] = +inp.value; out.textContent = inp.value; send(); };
@@ -94,6 +116,14 @@ function card(g) {
   const sw = el('button', { ariaPressed: String(cur.loudness), ariaLabel: 'Loudness' });
   sw.onclick = () => { cur.loudness = !cur.loudness; sw.setAttribute('aria-pressed', cur.loudness); send(); };
   card.append(el('div', { className: 'sw' }, 'Loudness', sw));
+
+  const auto = el('details', { className: 'auto' }, el('summary', {}, 'Automatik nach Quelle'));
+  for (const [src, label] of AUTO) {
+    const sel = el('select', { ariaLabel: `Preset bei ${label}` }, el('option', { value: '' }, 'aus'), ...g.presets.map((p) => el('option', { value: p.id, selected: g.auto?.[src] === p.id }, p.name)));
+    sel.onchange = guard(async () => { await api('/api/auto/set', { key: g.key, source: src, presetId: sel.value || null }); });
+    auto.append(el('label', { className: 'autorow' }, label, sel));
+  }
+  card.append(auto);
 
   const active = g.presets.find((p) => p.id === g.active);
   if (active) {
@@ -112,6 +142,13 @@ const load = guard(async () => {
 });
 $('#refresh').onclick = load;
 load();
+// Leise nachladen, damit Quelle und automatisch gesetzte Presets sichtbar werden (nicht beim Bedienen)
+addEventListener('pointerdown', () => (touching = true));
+['pointerup', 'pointercancel'].forEach((t) => addEventListener(t, () => (touching = false)));
+setInterval(async () => {
+  if (document.hidden || touching || busy || document.querySelector('details[open]')) return;
+  try { const d = await api('/api/groups'); if (JSON.stringify(d) !== lastSig) render(d); } catch {}
+}, 4000);
 </script>
 </body>
 </html>

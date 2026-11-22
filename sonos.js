@@ -47,7 +47,8 @@ export function parseTopology(zoneGroupStateXml) {
       const attr = (n) => m[1].match(new RegExp(`\\b${n}="([^"]*)"`))?.[1];
       if (attr('Invisible') === '1') continue; // Subs / Surround-Satelliten
       const ip = attr('Location')?.match(/\/\/([^:/]+)/)?.[1];
-      members.push({ id: attr('UUID'), name: unesc(attr('ZoneName') ?? '?'), ip });
+      // Sub/Rears im Home-Theater-Verbund: die Pegel (SubGain, SurroundLevel, MusicSurroundLevel) liegen auf dem Hauptgerät
+      members.push({ id: attr('UUID'), name: unesc(attr('ZoneName') ?? '?'), ip, hasSub: /:SW\b/.test(attr('HTSatChanMapSet') ?? ''), hasRears: /:(LR|RR)\b/.test(attr('HTSatChanMapSet') ?? '') });
     }
     if (!members.length) continue;
     groups.push({ coordinator, members });
@@ -61,12 +62,32 @@ export async function getTopology(anyIp) {
 }
 
 const inst = { InstanceID: 0 };
-export async function readSpeaker(ip) {
+export async function readSpeaker(ip, hasSub = false, hasRears = false) {
   const num = async (a, extra = {}) => Number(tag(await soap(ip, RC, a, { ...inst, ...extra }), a.replace('Get', 'Current')));
   const [volume, bass, treble, loud] = await Promise.all([
     num('GetVolume', { Channel: 'Master' }), num('GetBass'), num('GetTreble'), num('GetLoudness', { Channel: 'Master' }),
   ]);
-  return { volume, bass, treble, loudness: !!loud };
+  const sub = hasSub ? await readSubGain(ip).catch(() => undefined) : undefined;
+  const [rear, rearMusic] = hasRears ? await Promise.all([readEQ(ip, 'SurroundLevel'), readEQ(ip, 'MusicSurroundLevel')]).catch(() => []) : [];
+  return { volume, bass, treble, loudness: !!loud, ...(sub != null && { sub }), ...(rear != null && { rear, rearMusic }) };
+}
+const readEQ = async (ip, type) => Number(tag(await soap(ip, RC, 'GetEQ', { ...inst, EQType: type }), 'CurrentValue'));
+const readSubGain = (ip) => readEQ(ip, 'SubGain');
+const AVT = { path: '/MediaRenderer/AVTransport/Control', urn: 'urn:schemas-upnp-org:service:AVTransport:1' };
+/** Aktuelle Quelle eines Koordinators: URI, Transportzustand, Titel (bei Radio der Sendername). */
+export async function getSource(ip) {
+  const [media, tr] = await Promise.all([soap(ip, AVT, 'GetMediaInfo', inst), soap(ip, AVT, 'GetTransportInfo', inst)]);
+  const title = unesc(tag(media, 'CurrentURIMetaData') ?? '').match(/<dc:title>([^<]*)/)?.[1];
+  return { uri: unesc(tag(media, 'CurrentURI') ?? ''), state: tag(tr, 'CurrentTransportState'), title: title ? unesc(title) : undefined };
+}
+/** URI -> tv | spotify | linein | radio | other (null = nichts eingestellt) */
+export function classifySource(uri) {
+  if (!uri) return null;
+  if (/^x-sonos-htastream:/.test(uri)) return 'tv';
+  if (/spotify/i.test(uri)) return 'spotify';
+  if (/^x-rincon-stream:/.test(uri)) return 'linein';
+  if (/^(x-sonosapi-(stream|radio|hls)|aac|hls-radio|x-rincon-mp3radio):/.test(uri)) return 'radio';
+  return 'other';
 }
 export async function readGroupVolume(coordIp) {
   return Number(tag(await soap(coordIp, GRC, 'GetGroupVolume', inst), 'CurrentVolume'));
@@ -80,6 +101,9 @@ export async function applyToGroup(group, s) {
   for (const m of group.members) {
     if (s.bass != null) jobs.push(soap(m.ip, RC, 'SetBass', { ...inst, DesiredBass: clamp(s.bass, -10, 10) }));
     if (s.treble != null) jobs.push(soap(m.ip, RC, 'SetTreble', { ...inst, DesiredTreble: clamp(s.treble, -10, 10) }));
+    if (s.sub != null && m.hasSub) jobs.push(soap(m.ip, RC, 'SetEQ', { ...inst, EQType: 'SubGain', DesiredValue: clamp(s.sub, -15, 15) }));
+    if (s.rear != null && m.hasRears) jobs.push(soap(m.ip, RC, 'SetEQ', { ...inst, EQType: 'SurroundLevel', DesiredValue: clamp(s.rear, -15, 15) }));
+    if (s.rearMusic != null && m.hasRears) jobs.push(soap(m.ip, RC, 'SetEQ', { ...inst, EQType: 'MusicSurroundLevel', DesiredValue: clamp(s.rearMusic, -15, 15) }));
     if (s.loudness != null) jobs.push(soap(m.ip, RC, 'SetLoudness', { ...inst, Channel: 'Master', DesiredLoudness: s.loudness ? 1 : 0 }));
   }
   await Promise.all(jobs);

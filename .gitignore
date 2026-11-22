@@ -1,1 +1,4 @@
 presets.json
+ios/**/xcuserdata/
+ios/build/
+.DS_Store
