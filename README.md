@@ -23,3 +23,9 @@ Auf dem Handy: „Zum Home-Bildschirm hinzufügen“ für App-Gefühl.
 ## Hinweis
 Der Server muss im selben Netzwerk wie die Sonos laufen (nicht in der Cloud). Gegen echte Hardware ist
 das noch ungetestet – gib Bescheid, falls etwas nicht passt.
+
+## iOS-App (nativ, SwiftUI)
+Im Ordner `ios/` liegt eine eigenständige iPhone-App (kein Mac-Server nötig). Sie spricht direkt mit den
+Lautsprechern (Erkennung per Bonjour `_sonos._tcp`) und speichert Presets auf dem iPhone.
+`open ios/Sonossounds.xcodeproj`, Gerät wählen, ▶︎. Beim ersten Start „Lokales Netzwerk“ erlauben.
+Die Quellen-Automatik läuft nur, solange die App im Vordergrund ist. Im Simulator hilft der Demo-Modus (⚙︎).
